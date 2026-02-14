@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鼻毛危機一発</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            font-family: sans-serif;
+            margin-top: 20px; /* 上の余白を詰めて画面に収めやすくしました */
+            user-select: none;
+            cursor: url('tweezers.png') 0 0, auto; 
+            transition: background-color 0.5s ease; 
+            
+            /* ★修正：横のはみ出しだけ隠して、縦はスクロールできるように変更 */
+            overflow-x: hidden; 
+            overflow-y: auto;
+            min-height: 100vh;
+            touch-action: pan-y; /* スマホでの縦スクロールを許可 */
+        }
+
+        #start-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        #start-btn {
+            padding: 20px 40px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            background-color: #ff4757;
+            color: white;
+            border: none;
+            border-radius: 10px;
+        }
+
+        /* --- 振り子の手 --- */
+        #hand-left, #hand-right {
+            position: fixed;
+            top: -30px; 
+            width: 150px; 
+            transform-origin: top center; 
+            pointer-events: none; 
+            z-index: 5; 
+        }
+        #hand-left {
+            left: 5%;
+            animation: swingLeft 4s ease-in-out infinite; 
+        }
+        #hand-right {
+            right: 5%;
+            animation: swingRight 4s ease-in-out infinite;
+        }
+        @keyframes swingLeft {
+            0%, 100% { transform: rotate(25deg); }
+            50% { transform: rotate(-25deg); }
+        }
+        @keyframes swingRight {
+            0%, 100% { transform: scaleX(-1) rotate(25deg); }
+            50% { transform: scaleX(-1) rotate(-25deg); }
+        }
+
+        /* --- 下からにょきっと出る鼻 --- */
+        .appearing-nose {
+            position: fixed;
+            bottom: -150px; 
+            height: 150px; 
+            z-index: 6; 
+            mix-blend-mode: multiply; 
+            opacity: 0.9;
+            pointer-events: auto; 
+            cursor: pointer; 
+            animation: appearFromBottom 6s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+        }
+
+        #nose-left {
+            left: 10%;
+        }
+        #nose-right {
+            right: 10%;
+            transform: scaleX(-1); 
+            animation-delay: 3s; 
+        }
+
+        @keyframes appearFromBottom {
+            0%, 100% { bottom: -160px; } 
+            20%, 80% { bottom: -20px; }  
+        }
+
+        #game-container {
+            position: relative;
+            width: 450px; 
+            max-width: 90vw; 
+            height: auto;
+            z-index: 10;
+            margin-bottom: 30px; /* ★余白を縮めてメッセージが見えるように調整 */
+        }
+        #nose-image {
+            width: 100%;
+            display: block;
+            pointer-events: none;
+            position: relative;
+            z-index: 10;
+        }
+        
+        #nose-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: red;
+            opacity: 0; 
+            mix-blend-mode: multiply; 
+            pointer-events: none;
+            z-index: 15;
+            transition: opacity 0.5s ease;
+        }
+
+        .hanage {
+            position: absolute;
+            width: 6px;  
+            height: 60px; 
+            background-color: #111;
+            border-radius: 3px;
+            transform-origin: top center;
+            z-index: 20; 
+            cursor: url('tweezers.png') 0 0, grab; 
+        }
+        .hanage:active {
+            cursor: url('tweezers.png') 0 0, grabbing;
+        }
+
+        #message {
+            margin-top: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            position: relative; 
+            z-index: 30;
+            text-align: center; 
+        }
+        #reset-btn {
+            margin-top: 20px;
+            margin-bottom: 50px; /* 一番下にスクロール用の余白を確保 */
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            display: none;
+            position: relative; 
+            z-index: 30;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <button id="start-btn" onclick="startGame()">ゲームスタート<br><span style="font-size:16px;">（音が出ます）</span></button>
+    </div>
+
+    <img id="hand-left" src="hand.png" alt="左手">
+    <img id="hand-right" src="hand.png" alt="右手">
+
+    <img id="nose-left" class="appearing-nose" src="walking_nose.jpg" alt="左から出る鼻">
+    <img id="nose-right" class="appearing-nose" src="walking_nose.jpg" alt="右から出る鼻">
+
+    <h1>鼻毛危機一発</h1>
+    
+    <div id="game-container">
+        <img id="nose-image" src="nose.jpg" alt="メインの鼻">
+        <div id="nose-overlay"></div> 
+        <div id="hanage-container"></div>
+    </div>
+
+    <div id="message">鼻毛を掴んで、下に引っこ抜いてください。</div>
+    <button id="reset-btn" onclick="resetGame()">もう一度遊ぶ</button>
+
+    <script>
+        const bgm = new Audio('bgm.mp3');
+        bgm.loop = true;
+        bgm.volume = 0.1;
+        const sePull = new Audio('pull.mp3');
+        const seSafe = new Audio('safe.mp3');
+        const seOut = new Audio('out.mp3');
+        const seWalking = new Audio('walking.mp3');
+
+        const hanageCount = 10;
+        const container = document.getElementById('hanage-container');
+        const messageEl = document.getElementById('message');
+        const resetBtn = document.getElementById('reset-btn');
+        const startScreen = document.getElementById('start-screen');
+        const noseOverlay = document.getElementById('nose-overlay');
+        
+        let outIndex;
+        let gameOver = false;
+        let pulledCount = 0; 
+
+        document.querySelectorAll('.appearing-nose').forEach(nose => {
+            nose.addEventListener('click', function() {
+                seWalking.currentTime = 0; 
+                seWalking.play();
+            });
+            nose.addEventListener('touchstart', function(e) {
+                // スマホのタップで二重にイベントが発火するのを防ぎつつ音を鳴らす
+                seWalking.currentTime = 0; 
+                seWalking.play();
+            }, {passive: true});
+        });
+
+        function startGame() {
+            startScreen.style.display = 'none';
+            bgm.play().catch(e => console.log("BGM再生エラー", e));
+            
+            const noseImage = document.getElementById('nose-image');
+            if (noseImage.complete) {
+                initGame();
+            } else {
+                noseImage.onload = initGame;
+            }
+        }
+
+        function resetGame() {
+            bgm.currentTime = 0;
+            bgm.play();
+            initGame();
+        }
+
+        function initGame() {
+            container.innerHTML = '';
+            gameOver = false;
+            pulledCount = 0;
+            resetBtn.style.display = 'none';
+            messageEl.textContent = "鼻毛を掴んで、下に引っこ抜いてください。";
+            messageEl.style.color = "black";
+            
+            document.body.style.backgroundColor = "#f0f0f0";
+            noseOverlay.style.opacity = 0;
+            
+            outIndex = Math.floor(Math.random() * hanageCount);
+
+            const noseImage = document.getElementById('nose-image');
+            const imgW = noseImage.clientWidth > 0 ? noseImage.clientWidth : 450; 
+            const imgH = noseImage.clientHeight > 0 ? noseImage.clientHeight : 450; 
+
+            for (let i = 0; i < hanageCount; i++) {
+                const hanage = document.createElement('div');
+                hanage.classList.add('hanage');
+                
+                const isLeft = i % 2 === 0;
+                
+                const baseX = isLeft ? (imgW * 0.35) : (imgW * 0.65); 
+                const randomX = baseX + (Math.random() * (imgW * 0.12) - (imgW * 0.06)); 
+                
+                const baseY = imgH * 0.82; 
+                const randomY = baseY + (Math.random() * (imgH * 0.02) - (imgH * 0.01));
+
+                hanage.style.left = `${randomX}px`;
+                hanage.style.top = `${randomY}px`;
+                
+                const angle = (Math.random() * 40 - 20);
+                hanage.style.transform = `rotate(${angle}deg)`;
+
+                setupDrag(hanage, i, randomY);
+                container.appendChild(hanage);
+            }
+        }
+
+        function setupDrag(element, index, initialTop) {
+            let isDragging = false;
+            let startY = 0;
+            let currentY = initialTop;
+
+            const getEventY = (e) => {
+                return e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            };
+
+            const startDrag = (e) => {
+                if (gameOver) return;
+                isDragging = true;
+                startY = getEventY(e);
+                element.style.transition = 'none';
+                sePull.currentTime = 0;
+                sePull.play();
+            };
+
+            const moveDrag = (e) => {
+                if (!isDragging) return;
+                e.preventDefault(); 
+                const y = getEventY(e);
+                const deltaY = y - startY;
+                if (deltaY > 0) {
+                    currentY = initialTop + deltaY;
+                    element.style.top = `${currentY}px`;
+                }
+            };
+
+            const endDrag = (e) => {
+                if (!isDragging) return;
+                isDragging = false;
+                
+                const y = e.type.includes('touch') ? e.changedTouches[0].clientY : e.clientY;
+                const deltaY = y - startY;
+                
+                if (deltaY > 50) {
+                    pullHanage(element, index);
+                } else {
+                    element.style.transition = 'top 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'; 
+                    element.style.top = `${initialTop}px`;
+                }
+            };
+
+            element.addEventListener('mousedown', startDrag);
+            document.addEventListener('mousemove', moveDrag, { passive: false });
+            document.addEventListener('mouseup', endDrag);
+
+            element.addEventListener('touchstart', startDrag, { passive: false });
+            document.addEventListener('touchmove', moveDrag, { passive: false });
+            document.addEventListener('touchend', endDrag);
+        }
+
+        function getRandomColor() {
+            const letters = '89ABCDEF'; 
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * letters.length)];
+            }
+            return color;
+        }
+
+        function pullHanage(element, index) {
+            if (gameOver) return;
+
+            if (index === outIndex) {
+                bgm.pause();
+                seOut.currentTime = 0;
+                seOut.play();
+
+                element.style.backgroundColor = "red";
+                element.style.height = "200px"; 
+                element.style.zIndex = "100"; 
+
+                document.body.style.backgroundColor = "#ffcccc";
+                noseOverlay.style.opacity = 0.8;
+                
+                messageEl.textContent = "GAME OVER!! 赤い鼻毛を引いてしまった！";
+                messageEl.style.color = "red";
+                resetBtn.style.display = 'block';
+                gameOver = true;
+
+            } else {
+                seSafe.currentTime = 0;
+                seSafe.play();
+                pulledCount++;
+
+                document.body.style.backgroundColor = getRandomColor();
+                
+                let newOpacity = (pulledCount / hanageCount) * 0.6;
+                noseOverlay.style.opacity = newOpacity;
+
+                element.style.transition = 'top 0.5s ease-in, opacity 0.5s ease-in';
+                element.style.top = `${parseFloat(element.style.top) + 200}px`; 
+                element.style.opacity = '0'; 
+                
+                setTimeout(() => {
+                    element.style.display = 'none';
+                }, 500);
+
+                if (pulledCount === hanageCount - 1) {
+                    gameOver = true;
+                    bgm.pause(); 
+                    
+                    setTimeout(() => {
+                        document.body.style.backgroundColor = "#ffd700"; 
+                        noseOverlay.style.opacity = 0; 
+                        messageEl.textContent = "GAME CLEAR!! ハズレを完全回避！";
+                        messageEl.style.color = "#d35400";
+                        resetBtn.style.display = 'block';
+                    }, 300); 
+                } else {
+                    messageEl.textContent = `セーフ！ (${pulledCount}本目)`;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
